@@ -13,6 +13,11 @@
 
 #include <random>
 
+#include <ink/story.h>
+#include <ink/runner.h>
+#include <ink/choice.h>
+#include <memory.h>
+
 #define FONT_SIZE 36
 #define MARGGIN (FONT_SIZE * 0.5)
 
@@ -276,8 +281,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	scene.draw(*camera);
 
 	
-	// TEST RENDERING 1 CHAR
-	const char *text = "l";
+	// TEST RENDERING 1 STRING
+	const char *text = "jpi";
 
 	// Create hb-buffer and populate
 	hb_buffer_t *hb_buffer = hb_buffer_create();
@@ -288,131 +293,153 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
     hb_shape(hb_font, hb_buffer, NULL, 0);
 
 	// Get glyph info and pos out of the buffer
-    // unsigned int num_chars = hb_buffer_get_length (hb_buffer);
+    unsigned int num_chars = hb_buffer_get_length (hb_buffer);
     hb_glyph_info_t *info = hb_buffer_get_glyph_infos (hb_buffer, NULL);
-    // hb_glyph_position_t *pos = hb_buffer_get_glyph_positions (hb_buffer, NULL);
+    hb_glyph_position_t *pos = hb_buffer_get_glyph_positions (hb_buffer, NULL);
 
-	FT_UInt glyph_index = info[0].codepoint;
-	
-	// Load glyph image into the slot (erase prev)
-	if (FT_Load_Glyph (ft_face, glyph_index, FT_LOAD_DEFAULT)) {
-		fprintf (stderr, "Error loading glyph image into slot\n");
-		abort();
+	float pen_x = 100.0f;
+	float pen_y = 100.0f;
+
+	for (unsigned int i = 0; i < num_chars; i++) {
+		FT_UInt glyph_index = info[i].codepoint;
+		
+		// Load glyph image into the slot (erase prev)
+		if (FT_Load_Glyph (ft_face, glyph_index, FT_LOAD_DEFAULT)) {
+			fprintf (stderr, "Error loading glyph image into slot\n");
+			abort();
+		}
+
+		// Convert to an anti-aliased bitmap
+		if (FT_Render_Glyph( ft_face->glyph, FT_RENDER_MODE_NORMAL)) {
+			fprintf (stderr, "Error converting glyph to an anti-aliased bitmap\n");
+			abort();
+		}
+
+		// Glyph slot for easier access
+		FT_GlyphSlot slot = ft_face->glyph;
+
+		// For testing
+		printf("glyph index: %u\n", glyph_index);
+		printf("bitmap: %d x %d\n", slot->bitmap.width, slot->bitmap.rows);
+		printf("pitch: %d\n", slot->bitmap.pitch);
+		printf("pixel mode: %d\n", slot->bitmap.pixel_mode);
+		printf("bitmap_left: %d, bitmap_top: %d\n", slot->bitmap_left, slot->bitmap_top);
+
+		// Built off of ideas in PPU466.cpp from project 1 
+		// Create texture for glyph
+		GLuint glyph_tex = 0;
+
+		glGenTextures(1, &glyph_tex);
+		glBindTexture(GL_TEXTURE_2D, glyph_tex);
+
+		// Freetype's bitmap is one byte per pixel
+		// Keep in mind: 1 alpha channel
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+		//passing 'nullptr' to TexImage says "allocate memory but don't store anything there":
+		// (textures will be uploaded later)
+		// GL_RGBA8 to GL_R8 b/c 1 colour channel instead of 4
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, slot->bitmap.width, slot->bitmap.rows, 0, GL_RED, GL_UNSIGNED_BYTE, slot->bitmap.buffer);
+		//make the texture have sharp pixels when magnified:
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		//when access past the edge, clamp to the edge:
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		// vertex
+		struct Vertex {
+			glm::vec2 Position;
+			glm::vec2 TexCoord;
+		};
+
+		// need to account for the bitmap starting points
+		float pen_x_offset = pen_x + pos[i].x_offset / 64.0f + slot->bitmap_left; // left
+		float pen_y_offset = pen_y - pos[i].y_offset / 64.0f + slot->bitmap_top; // bottom
+
+		// build rectangle representing background and sprites (of bitmap):
+		std::vector<Vertex> vertices = {
+			{glm::vec2(pen_x_offset, pen_y_offset), glm::vec2(0.0f, 1.0f)},
+			{glm::vec2(pen_x_offset + slot->bitmap.width, pen_y_offset), glm::vec2(1.0f, 1.0f)},
+			{glm::vec2(pen_x_offset + slot->bitmap.width, pen_y_offset + slot->bitmap.rows), glm::vec2(1.0f, 0.0f)},
+			{glm::vec2(pen_x_offset, pen_y_offset), glm::vec2(0.0f, 1.0f)},
+			{glm::vec2(pen_x_offset + slot->bitmap.width, pen_y_offset + slot->bitmap.rows), glm::vec2(1.0f, 0.0f)},
+			{glm::vec2(pen_x_offset, pen_y_offset + slot->bitmap.rows), glm::vec2(0.0f, 0.0f)}
+		};
+
+		//vertex_buffer will (eventually) hold vertex data for drawing:
+		GLuint vertex_buffer = 0;
+		glGenBuffers(1, &vertex_buffer);
+		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+
+		glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STREAM_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		// vao
+		GLuint vertex_array = 0;
+		glGenVertexArrays(1, &vertex_array);
+		glBindVertexArray(vertex_array);
+
+		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+
+		// attribute array for position
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Position));
+
+		// attribute array for text coords
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoord));
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		glBindVertexArray(0);
+
+		// vertex shader
+		GLuint text_vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
+		glShaderSource(text_vertex_shader_id, 1, &text_vertex_shader, nullptr);
+		glCompileShader(text_vertex_shader_id);
+
+		// fragment shader
+		GLuint text_fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
+		glShaderSource(text_fragment_shader_id, 1, &text_fragment_shader, nullptr);
+		glCompileShader(text_fragment_shader_id);
+
+		GLuint text_program = glCreateProgram();
+		glAttachShader(text_program, text_vertex_shader_id);
+		glAttachShader(text_program, text_fragment_shader_id);
+		glLinkProgram(text_program);
+
+		glUseProgram(text_program);
+
+		// uniforms for shader programs
+		glm::mat4 OBJECT_TO_CLIP = glm::mat4(
+			glm::vec4(2.0f / float(drawable_size.x), 0.0f, 0.0f, 0.0f),
+			glm::vec4(0.0f, 2.0f / float(drawable_size.y), 0.0f, 0.0f),
+			glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+			glm::vec4(-1.0f, -1.0f, 0.0f, 1.0f)
+		);
+		GLint object_to_clip = glGetUniformLocation(text_program, "OBJECT_TO_CLIP");
+		glUniformMatrix4fv(object_to_clip, 1, GL_FALSE, glm::value_ptr(OBJECT_TO_CLIP));
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, glyph_tex);
+
+		GLint glyph_texture = glGetUniformLocation(text_program, "glyphTexture");
+		glUniform1i(glyph_texture, 0);
+
+		glBindVertexArray(vertex_array);
+
+		// enable blending
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glBindVertexArray(0);
+
+		// update pen location
+		pen_x += pos[i].x_advance / 64.0f;
+		pen_y += pos[i].y_advance / 64.0f;
 	}
-
-	// Convert to an anti-aliased bitmap
-	if (FT_Render_Glyph( ft_face->glyph, FT_RENDER_MODE_NORMAL)) {
-		fprintf (stderr, "Error converting glyph to an anti-aliased bitmap\n");
-		abort();
-	}
-
-	// Glyph slot for easier access
-	FT_GlyphSlot slot = ft_face->glyph;
-
-	printf("glyph index: %u\n", glyph_index);
-	printf("bitmap: %d x %d\n", slot->bitmap.width, slot->bitmap.rows);
-
-	// Built off of ideas in PPU466.cpp from project 1 
-	// Create texture for glyph
-	GLuint glyph_tex = 0;
-
-	glGenTextures(1, &glyph_tex);
-	glBindTexture(GL_TEXTURE_2D, glyph_tex);
-
-	// Freetype's bitmap is one byte per pixel
-	// Keep in mind: 1 alpha channel
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-	//passing 'nullptr' to TexImage says "allocate memory but don't store anything there":
-	// (textures will be uploaded later)
-	// GL_RGBA8 to GL_R8 b/c 1 colour channel instead of 4
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, slot->bitmap.width, slot->bitmap.rows, 0, GL_RED, GL_UNSIGNED_BYTE, slot->bitmap.buffer);
-	//make the texture have sharp pixels when magnified:
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	//when access past the edge, clamp to the edge:
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	// vertex
-	struct Vertex {
-		glm::vec2 Position;
-		glm::vec2 TexCoord;
-	};
-
-	// build rectangle representing background and sprites (of bitmap):
-	std::vector<Vertex> vertices = {
-		{glm::vec2(100.0f, 100.0f), glm::vec2(0.0f, 0.0f)},
-		{glm::vec2(100.0f + slot->bitmap.width, 100.0f), glm::vec2(1.0f, 0.0f)},
-		{glm::vec2(100.0f + slot->bitmap.width, 100.0f + slot->bitmap.rows), glm::vec2(1.0f, 1.0f)},
-		{glm::vec2(100.0f, 100.0f), glm::vec2(0.0f, 0.0f)},
-		{glm::vec2(100.0f + slot->bitmap.width, 100.0f + slot->bitmap.rows), glm::vec2(1.0f, 1.0f)},
-		{glm::vec2(100.0f, 100.0f + slot->bitmap.rows), glm::vec2(0.0f, 1.0f)}
-	};
-
-	//vertex_buffer will (eventually) hold vertex data for drawing:
-	GLuint vertex_buffer = 0;
-	glGenBuffers(1, &vertex_buffer);
-	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-
-	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STREAM_DRAW);
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-	// vao
-	GLuint vertex_array = 0;
-	glGenVertexArrays(1, &vertex_array);
-	glBindVertexArray(vertex_array);
-
-	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-
-	// attribute array for position
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Position));
-
-	// attribute array for text coords
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoord));
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-
-	// vertex shader
-	GLuint text_vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(text_vertex_shader_id, 1, &text_vertex_shader, nullptr);
-	glCompileShader(text_vertex_shader_id);
-
-	// fragment shader
-	GLuint text_fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(text_fragment_shader_id, 1, &text_fragment_shader, nullptr);
-	glCompileShader(text_fragment_shader_id);
-
-	GLuint text_program = glCreateProgram();
-	glAttachShader(text_program, text_vertex_shader_id);
-	glAttachShader(text_program, text_fragment_shader_id);
-	glLinkProgram(text_program);
-
-	glUseProgram(text_program);
-
-	// uniforms for shader programs
-	glm::mat4 OBJECT_TO_CLIP = glm::mat4(
-		glm::vec4(2.0f / float(drawable_size.x), 0.0f, 0.0f, 0.0f),
-		glm::vec4(0.0f, 2.0f / float(drawable_size.y), 0.0f, 0.0f),
-		glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
-		glm::vec4(-1.0f, -1.0f, 0.0f, 1.0f)
-	);
-	GLint object_to_clip = glGetUniformLocation(text_program, "OBJECT_TO_CLIP");
-	glUniformMatrix4fv(object_to_clip, 1, GL_FALSE, glm::value_ptr(OBJECT_TO_CLIP));
-
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, glyph_tex);
-
-	GLint glyph_texture = glGetUniformLocation(text_program, "glyphTexture");
-	glUniform1i(glyph_texture, 0);
-
-	glBindVertexArray(vertex_array);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
-	glBindVertexArray(0);
 
 	GL_ERRORS();
 }

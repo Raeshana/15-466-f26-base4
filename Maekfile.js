@@ -21,6 +21,7 @@ const maek = init_maek();
 //======================================================================
 
 const NEST_LIBS = `../nest-libs/${maek.OS}`;
+const DIR = 'ink/win64-lib';
 
 //set compile flags (these can also be overridden per-task using the "options" parameter):
 if (maek.OS === "windows") {
@@ -36,6 +37,7 @@ if (maek.OS === "windows") {
 		`/I${NEST_LIBS}/libogg/include`,
 		`/I${NEST_LIBS}/harfbuzz/include`,
 		`/I${NEST_LIBS}/freetype/include`,
+		`/I${DIR}/include`,
 		//#disable a few warnings:
 		`/wd4146`, //-1U is still unsigned
 		`/wd4297`, //unforunately SDLmain is nothrow
@@ -52,6 +54,7 @@ if (maek.OS === "windows") {
 		`/LIBPATH:${NEST_LIBS}/libogg/lib`, `libogg.lib`,
 		`/LIBPATH:${NEST_LIBS}/harfbuzz/lib`, `harfbuzz.lib`,
 		`/LIBPATH:${NEST_LIBS}/freetype/lib`, `freetype.lib`,
+		`/LIBPATH:${DIR}/lib`,
 		`/MANIFEST:EMBED`, `/MANIFESTINPUT:set-utf8-code-page.manifest`
 	);
 } else if (maek.OS === "linux") {
@@ -65,7 +68,8 @@ if (maek.OS === "windows") {
 		`-I${NEST_LIBS}/libopus/include`,
 		`-I${NEST_LIBS}/libogg/include`,
 		`-I${NEST_LIBS}/harfbuzz/include`,
-		`-I${NEST_LIBS}/freetype/include`
+		`-I${NEST_LIBS}/freetype/include`,
+		`-I${DIR}/include`,
 	);
 	maek.options.LINKLibs.push(
 		//linker flags for nest libraries:
@@ -76,7 +80,8 @@ if (maek.OS === "windows") {
 		`-L${NEST_LIBS}/libopus/lib`, `-lopus`,
 		`-L${NEST_LIBS}/libogg/lib`, `-logg`,
 		`-L${NEST_LIBS}/harfbuzz/lib`, `-lharfbuzz`,
-		`-L${NEST_LIBS}/freetype/lib`, `-lfreetype`
+		`-L${NEST_LIBS}/freetype/lib`, `-lfreetype`,
+		`-L${DIR}/lib`,
 	);
 } else if (maek.OS === "macos") {
 	maek.options.CPPFlags.push(
@@ -89,7 +94,8 @@ if (maek.OS === "windows") {
 		`-I${NEST_LIBS}/libopus/include`,
 		`-I${NEST_LIBS}/libogg/include`,
 		`-I${NEST_LIBS}/harfbuzz/include`,
-		`-I${NEST_LIBS}/freetype/include`
+		`-I${NEST_LIBS}/freetype/include`,
+		`-I${DIR}/lib`,
 	);
 	maek.options.LINKLibs.push(
 		//linker flags for nest libraries:
@@ -118,7 +124,8 @@ if (maek.OS === "windows") {
 		`-L${NEST_LIBS}/libopus/lib`, `-lopus`,
 		`-L${NEST_LIBS}/libogg/lib`, `-logg`,
 		`-L${NEST_LIBS}/harfbuzz/lib`, `-lharfbuzz`,
-		`-L${NEST_LIBS}/freetype/lib`, `-lfreetype`
+		`-L${NEST_LIBS}/freetype/lib`, `-lfreetype`,
+		`-L${DIR}/lib`,
 	);
 }
 //use COPY to copy a file

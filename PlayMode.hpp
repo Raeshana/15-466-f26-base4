@@ -8,6 +8,18 @@
 #include <vector>
 #include <deque>
 
+// text pipeline
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#include <hb.h>
+#include <hb-ft.h>
+
+#include <iostream>
+
+#define FONT_SIZE 36
+#define MARGGIN (FONT_SIZE * 0.5)
+
 struct PlayMode : Mode {
 	PlayMode();
 	virtual ~PlayMode();
@@ -48,4 +60,10 @@ struct PlayMode : Mode {
 	//camera:
 	Scene::Camera *camera = nullptr;
 
+	// Initialize library and load font face
+    FT_Library ft_library = nullptr; // handle to library
+    FT_Face ft_face = nullptr;       // handle to face object
+
+	// Create hb-ft font
+    hb_font_t *hb_font = nullptr;
 };

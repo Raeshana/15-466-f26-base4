@@ -92,10 +92,23 @@ int main(int argc, char **argv) {
         std::cout << "width: " << ft_face->glyph->bitmap.width;
         std::cout << "height: " << ft_face->glyph->bitmap.rows;
 
-        // // Now, draw to our target surface
-        // my_draw_bitmap( &slot->bitmap,
-        //                 pen_x + slot->bitmap_left,
-        //                 pen_y - slot->bitmap_top );
+        // // Built off of ideas in PPU466.cpp from project 1 
+        // // Create texture for glyph
+        // GLuint glyph_tex;
+
+        // glGenTextures(1, &glyph_tex);
+        // glBindTexture(GL_TEXTURE_2D, glyph_tex);
+
+        // //passing 'nullptr' to TexImage says "allocate memory but don't store anything there":
+        // // (textures will be uploaded later)
+        // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, slot->bitmap.width, slot->bitmap.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, slot->bitmap.buffer);
+        // //make the texture have sharp pixels when magnified:
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        // //when access past the edge, clamp to the edge:
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        // glBindTexture(GL_TEXTURE_2D, 0);
 
         // Increment pen position (based on harfbuzz pos)
         pen_x += pos[n].x_advance;

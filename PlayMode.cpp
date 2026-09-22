@@ -7,10 +7,14 @@
 #include "Load.hpp"
 #include "gl_errors.hpp"
 #include "data_path.hpp"
+#include "gl_compile_program.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
 
 #include <random>
+
+#define FONT_SIZE 36
+#define MARGGIN (FONT_SIZE * 0.5)
 
 GLuint hexapod_meshes_for_lit_color_texture_program = 0;
 Load< MeshBuffer > hexapod_meshes(LoadTagDefault, []() -> MeshBuffer const * {
@@ -68,6 +72,25 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	//start music loop playing:
 	// (note: position will be over-ridden in update())
 	leg_tip_loop = Sound::loop_3D(*dusty_floor_sample, 1.0f, get_leg_tip_position(), 10.0f);
+
+	// text pipeline
+	// Abort if files not found/ not working
+    if (FT_Init_FreeType( &ft_library )) {
+        fprintf (stderr, "Could not find library\n");
+        abort();
+    }
+	const char *fontfile = "C:\\Windows\\Fonts\\Arial.ttf";
+    if (FT_New_Face(ft_library, fontfile, 0, &ft_face)) {
+        fprintf (stderr, "Font file could be opened and read, but font format is unsupported\n");
+        abort();
+    }
+    if ((FT_Set_Char_Size (ft_face, FONT_SIZE*64, FONT_SIZE*64, 0, 0))){   
+        fprintf (stderr, "Font size could not be set\n");
+        abort();
+    }
+
+	// Create hb-ft font
+    hb_font = hb_ft_font_create(ft_face, NULL);
 }
 
 PlayMode::~PlayMode() {
@@ -194,6 +217,147 @@ void PlayMode::update(float elapsed) {
 	down.downs = 0;
 }
 
+// Based on PPU466 PPUTileProgram
+struct TextProgram {
+	TextProgram();
+	~TextProgram();
+
+	GLuint program = 0;
+
+	//Attribute (per-vertex variable) locations:
+	// vec2 instead of ivec2 since we want floating pts
+	GLint Position_vec2 = -1;
+	GLint TexCoord_vec2 = -1;
+
+	//Uniform (per-invocation variable) locations:
+	GLint OBJECT_TO_CLIP_mat4 = -1;
+
+	//Textures bindings:
+	// sampler2D instead of usampler2D
+	GLint GLYPH_TEXTURE_sampler2D = -1;
+	GLint TEXT_COLOUR_vec4 = -1;
+};
+
+TextProgram::TextProgram() {
+	program = gl_compile_program(
+		//vertex shader:
+		"#version 330\n"
+		"uniform mat4 OBJECT_TO_CLIP;\n"
+		"in vec2 Position;\n"
+		"in vec2 TexCoord;\n"
+		"out vec2 texCoord;\n"
+		"void main() {\n"
+		"	gl_Position = OBJECT_TO_CLIP * vec4(Position, 0.0, 1.0);\n" // vec4 since position was prev vec4 but is now vec2
+		"	texCoord = TexCoord;\n"
+		"}\n"
+	,
+		//fragment shader:
+		"#version 330\n"
+		"uniform sampler2D GLYPH_TEXTURE;\n"
+		"uniform vec4 TEXT_COLOUR;\n"
+		"in vec2 texCoord;\n"
+		"out vec4 fragColor;\n"
+		"void main() {\n"
+		"	float alpha = texture(GLYPH_TEXTURE, texCoord).r;\n"
+		"	fragColor = vec4(TEXT_COLOUR.rgb, TEXT_COLOUR.a * alpha);\n"
+		"}\n"
+	);
+
+	//look up the locations of vertex attributes:
+	Position_vec2 = glGetAttribLocation(program, "Position");
+	TexCoord_vec2 = glGetAttribLocation(program, "TexCoord");
+
+	//look up the locations of uniforms:
+	OBJECT_TO_CLIP_mat4 = glGetUniformLocation(program, "OBJECT_TO_CLIP");
+	GLYPH_TEXTURE_sampler2D = glGetUniformLocation(program, "GLYPH_TEXTURE");
+	TEXT_COLOUR_vec4 = glGetUniformLocation(program, "TEXT_COLOUR");
+
+	//bind texture units indices to samplers:
+	glUseProgram(program);
+	glUniform1i(GLYPH_TEXTURE_sampler2D, 0);
+	glUseProgram(0);
+
+	GL_ERRORS();
+}
+
+TextProgram::~TextProgram() {
+	if (program != 0) {
+		glDeleteProgram(program);
+		program = 0;
+	}
+}
+
+//Initialize text program and associated buffers:
+TextProgram text_program;
+
+// Based on PPU466 PPUDataStream
+//Text data is streamed to the GPU (read: uploaded 'just in time') using a few buffers:
+struct TextDataStream {
+	TextDataStream();
+	~TextDataStream();
+
+	//vertex format for convenience:
+	struct Vertex {
+		Vertex(glm::vec2 const &Position_, glm::vec2 const &TexCoord_)
+			: Position(Position_), TexCoord(TexCoord_) {}
+		//I generally make class members lowercase, but I make an exception here because
+		// I use uppercase for vertex attributes in shader programs and want to match.
+		glm::vec2 Position;
+		glm::vec2 TexCoord;
+	};
+
+	//vertex buffer that will store data stream:
+	GLuint vertex_buffer = 0;
+
+	//vertex array object that maps text program attributes to vertex storage:
+	GLuint vertex_buffer_for_text_program = 0;
+};
+
+TextDataStream::TextDataStream() {
+	//vertex_buffer_for_tex_program is a vertex array object that tells the GPU the layout of data in vertex_buffer:
+	glGenBuffers(1, &vertex_buffer);
+	glGenVertexArrays(1, &vertex_buffer_for_text_program);
+
+	//vertex_buffer will (eventually) hold vertex data for drawing:
+	glBindVertexArray(vertex_buffer_for_text_program);
+	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+
+	//Notice how this binding is attaching an integer input to a floating point attribute:
+	glVertexAttribPointer(
+		text_program.Position_vec2, //attribute
+		2, //size
+		GL_FLOAT, //type
+		GL_FALSE, //normalized
+		sizeof(Vertex), //stride
+		(void *)offsetof(Vertex, Position) //offset
+	);
+	glEnableVertexAttribArray(text_program.Position_vec2);
+
+	//the "I" variant binds to an integer attribute:
+	glVertexAttribPointer(
+		text_program.TexCoord_vec2, //attribute
+		2, //size
+		GL_FLOAT, //type
+		GL_FALSE, //normalized
+		sizeof(Vertex), //stride
+		(void *)offsetof(Vertex, TexCoord) //offset
+	);
+	glEnableVertexAttribArray(text_program.TexCoord_vec2);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	glBindVertexArray(0);
+
+	GL_ERRORS();
+}
+
+TextDataStream::~TextDataStream() {
+	glDeleteBuffers(1, &vertex_buffer);
+	glDeleteVertexArrays(1, &vertex_buffer_for_text_program);
+}
+
+TextDataStream text_data_stream;
+
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	//update camera aspect ratio for drawable:
 	camera->aspect = float(drawable_size.x) / float(drawable_size.y);
@@ -215,27 +379,95 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	scene.draw(*camera);
 
-	{ //use DrawLines to overlay some text:
-		glDisable(GL_DEPTH_TEST);
-		float aspect = float(drawable_size.x) / float(drawable_size.y);
-		DrawLines lines(glm::mat4(
-			1.0f / aspect, 0.0f, 0.0f, 0.0f,
-			0.0f, 1.0f, 0.0f, 0.0f,
-			0.0f, 0.0f, 1.0f, 0.0f,
-			0.0f, 0.0f, 0.0f, 1.0f
-		));
+	return;
 
-		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+	// text pipeline
+	FT_UInt glyph_index = FT_Get_Char_Index(ft_face, 'l');
+	
+	// Load glyph image into the slot (erase prev)
+	if (FT_Load_Glyph (ft_face, glyph_index, FT_LOAD_DEFAULT)) {
+		fprintf (stderr, "Error loading glyph image into slot\n");
+		abort();
 	}
+	
+	// Glyph slot for easier access
+	FT_GlyphSlot slot = ft_face->glyph;
+
+	// Convert to an anti-aliased bitmap
+	if (FT_Render_Glyph( slot, FT_RENDER_MODE_NORMAL)) {
+		fprintf (stderr, "Error converting glyph to an anti-aliased bitmap\n");
+		abort();
+	}
+
+	// Built off of ideas in PPU466.cpp from project 1 
+	// Create texture for glyph
+	GLuint glyph_tex;
+
+	glGenTextures(1, &glyph_tex);
+	glBindTexture(GL_TEXTURE_2D, glyph_tex);
+
+	// Freetype's bitmap is one byte per pixel
+	// Keep in mind: 1 alpha channel
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	//passing 'nullptr' to TexImage says "allocate memory but don't store anything there":
+	// (textures will be uploaded later)
+	// GL_RGBA8 to GL_R8 b/c 1 colour channel instead of 4
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, slot->bitmap.width, slot->bitmap.rows, 0, GL_RED, GL_UNSIGNED_BYTE, slot->bitmap.buffer);
+	//make the texture have sharp pixels when magnified:
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	//when access past the edge, clamp to the edge:
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//build rectangle representing background and sprites (of bitmap):
+	// std::vector<TextDataStream::Vertex> vertices = {
+	// 	TextDataStream::Vertex(glm::vec2(100.0f, 100.0f), glm::vec2(0.0f, 0.0f)),
+	// 	TextDataStream::Vertex(glm::vec2(100.0f + slot->bitmap.width, 100.0f), glm::vec2(1.0f, 0.0f)),
+	// 	TextDataStream::Vertex(glm::vec2(100.0f + slot->bitmap.width, 100.0f + slot->bitmap.rows),
+	// 							glm::vec2(1.0f, 1.0f)),
+	// 	TextDataStream::Vertex(glm::vec2(100.0f, 100.0f), glm::vec2(0.0f, 0.0f)),
+	// 	TextDataStream::Vertex(glm::vec2(100.0f + slot->bitmap.width, 100.0f + slot->bitmap.rows),
+	// 							glm::vec2(1.0f, 1.0f)),
+	// 	TextDataStream::Vertex(glm::vec2(100.0f, 100.0f + slot->bitmap.rows), glm::vec2(0.0f, 1.0f))
+	// };
+
+	// //upload vertex data:
+	// glBindBuffer(GL_ARRAY_BUFFER, text_data_stream.vertex_buffer);
+	// glBufferData(GL_ARRAY_BUFFER, sizeof(TextDataStream::Vertex) * vertices.size(), vertices.data(), GL_STREAM_DRAW);
+	// glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	// // set the shader programs:
+	// glUseProgram(text_program.program);
+
+	// // configure attribute streams:
+	// glBindVertexArray(text_data_stream.vertex_buffer_for_text_program);
+
+	// // set uniforms for shader programs:
+	// glUniform4f(text_program.TEXT_COLOUR_vec4, 1.0f, 1.0f, 1.0f, 1.0f);
+	// glm::mat4 OBJECT_TO_CLIP = glm::mat4(
+	// 	glm::vec4(2.0f / float(drawable_size.x), 0.0f, 0.0f, 0.0f),
+	// 	glm::vec4(0.0f, 2.0f / float(drawable_size.y), 0.0f, 0.0f),
+	// 	glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+	// 	glm::vec4(-1.0f, -1.0f, 0.0f, 1.0f)
+	// );
+
+	// glUniformMatrix4fv(text_program.OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(OBJECT_TO_CLIP));
+
+	// // bind texture units to proper texture objects:
+	// glActiveTexture(GL_TEXTURE0);
+	// glBindTexture(GL_TEXTURE_2D, glyph_tex);
+
+	// //now that the pipeline is configured, trigger drawing of rectangle:
+	// glDrawArrays(GL_TRIANGLE_STRIP, 0, GLsizei(vertices.size()));
+
+	// //return state to default:
+	// glActiveTexture(GL_TEXTURE0);
+	// glBindVertexArray(0);
+	// glUseProgram(0);
+
 	GL_ERRORS();
 }
 

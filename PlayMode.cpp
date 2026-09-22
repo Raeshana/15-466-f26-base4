@@ -13,17 +13,42 @@
 
 #include <random>
 
-#include <ink/story.h>
-#include <ink/runner.h>
-#include <ink/choice.h>
-#include <memory.h>
+// #include <ink/story.h>
+// #include <ink/runner.h>
+// #include <ink/choice.h>
+// #include <memory.h>
+
+#include <iostream>
+#include <string>
 
 #define FONT_SIZE 36
 #define MARGGIN (FONT_SIZE * 0.5)
 
 // Referenced https://github.com/harfbuzz/harfbuzz-tutorial/blob/master/hello-harfbuzz-freetype.c
 // Referenced https://freetype.org/freetype2/docs/tutorial/step1.html
-// Referenced PPU466.cpp from project 1
+// Referenced PPU466.cpp from project 1 to render bitmap textures
+// Referenced https://github.com/JBenda/inkcpp for inky-c++ integration [RAHHH!]
+
+const char *story[] = {
+    "The interrogation room smells like potatoes.",
+    "Across from you sits Mr. Peeler...",
+	"...prime suspect in the murder of Mr. Potato Knishes.",
+    "You slide a photograph across the table.",
+    "\"Recognize him?\"",
+    "Mr. Peeler sighs.",
+    "\"Of course I recognize him--he owed me $20.\"",
+    "\"And where were you that night?\"",
+    "\"At home.\"",
+    "\"Doing what?\"",
+    "\"Peeling.\"",
+	"\"[1. So you admit you peeled Mr. Potato Knishes?]\"",
+	"\"[2. How a-peeling.]\"",
+	"\"[3. WHERE IS THE PROOF?!]",
+	"[Choose 1, 2, or 3]",
+	"You ask questions until you get all the evidence you need.",
+	"You hit it off with Mr. Peeler, you are going on a date tomorrow.",
+	"You were too rude, Mr. Peeler stabbed you."
+};
 
 // text vertex shader
 const char *text_vertex_shader = R"(
@@ -133,6 +158,13 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 
 	// Create hb-ft font
     hb_font = hb_ft_font_create(ft_face, NULL);
+	
+	// refer to inky c++ example: https://github.com/JBenda/inkcpp
+	// std::unique_ptr<ink::runtime::story> myInk{
+	// 	ink::runtime::story::from_file("story.bin")
+	// };
+	// ink::runtime::runner thread = myInk->new_runner();
+	// printf("%s\n", thread->getline().c_str());
 }
 
 PlayMode::~PlayMode() {
@@ -160,9 +192,17 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			down.downs += 1;
 			down.pressed = true;
 			return true;
-		} else if (evt.key.key == SDLK_SPACE) {
-			if (honk_oneshot) honk_oneshot->stop();
-			honk_oneshot = Sound::play_3D(*honk_sample, 0.3f, glm::vec3(4.6f, -7.8f, 6.9f)); //hardcoded position of front of car, from blender
+		} else if (evt.key.key == SDLK_SPACE && current_line < 14) {
+			current_line++;
+		} else if (evt.key.key == SDLK_1 && current_line == 14) {
+			current_line = 15;
+			return true;
+		} else if (evt.key.key == SDLK_2 && current_line == 14) {
+			current_line = 16;
+			return true;
+		} else if (evt.key.key == SDLK_3 && current_line == 14) {
+			current_line = 17;
+			return true;
 		}
 	} else if (evt.type == SDL_EVENT_KEY_UP) {
 		if (evt.key.key == SDLK_A) {
@@ -279,10 +319,9 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	glDepthFunc(GL_LESS); //this is the default depth comparison function, but FYI you can change it.
 
 	scene.draw(*camera);
-
 	
 	// TEST RENDERING 1 STRING
-	const char *text = "jpi";
+	const char *text = story[current_line];
 
 	// Create hb-buffer and populate
 	hb_buffer_t *hb_buffer = hb_buffer_create();
@@ -318,12 +357,12 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		// Glyph slot for easier access
 		FT_GlyphSlot slot = ft_face->glyph;
 
-		// For testing
-		printf("glyph index: %u\n", glyph_index);
-		printf("bitmap: %d x %d\n", slot->bitmap.width, slot->bitmap.rows);
-		printf("pitch: %d\n", slot->bitmap.pitch);
-		printf("pixel mode: %d\n", slot->bitmap.pixel_mode);
-		printf("bitmap_left: %d, bitmap_top: %d\n", slot->bitmap_left, slot->bitmap_top);
+		// // For testing
+		// printf("glyph index: %u\n", glyph_index);
+		// printf("bitmap: %d x %d\n", slot->bitmap.width, slot->bitmap.rows);
+		// printf("pitch: %d\n", slot->bitmap.pitch);
+		// printf("pixel mode: %d\n", slot->bitmap.pixel_mode);
+		// printf("bitmap_left: %d, bitmap_top: %d\n", slot->bitmap_left, slot->bitmap_top);
 
 		// Built off of ideas in PPU466.cpp from project 1 
 		// Create texture for glyph

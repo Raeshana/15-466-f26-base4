@@ -38,12 +38,14 @@ if (maek.OS === "windows") {
 		`/I${NEST_LIBS}/harfbuzz/include`,
 		`/I${NEST_LIBS}/freetype/include`,
 		`/I${DIR}/include`,
+		`/Iink/inkcpp/shared/private`,
 		//#disable a few warnings:
 		`/wd4146`, //-1U is still unsigned
 		`/wd4297`, //unforunately SDLmain is nothrow
 		`/wd4100`, //unreferenced formal parameter
 		`/wd4201`, //nameless struct/union
-		`/wd4611`  //interaction between setjmp and C++ object destruction
+		`/wd4611`, //interaction between setjmp and C++ object destruction
+		`/wd4150`, //inky-- deletion of pointer to incomplete type
 	);
 	maek.options.LINKLibs.push(
 		`/LIBPATH:${NEST_LIBS}/SDL3/lib`, `SDL3.lib`, `OpenGL32.lib`, `Shell32.lib`,
@@ -54,7 +56,8 @@ if (maek.OS === "windows") {
 		`/LIBPATH:${NEST_LIBS}/libogg/lib`, `libogg.lib`,
 		`/LIBPATH:${NEST_LIBS}/harfbuzz/lib`, `harfbuzz.lib`,
 		`/LIBPATH:${NEST_LIBS}/freetype/lib`, `freetype.lib`,
-		`/LIBPATH:${DIR}/lib`,
+		`/LIBPATH:ink/inkcpp/build/inkcpp/Release`,
+		`inkcpp.lib`,
 		`/MANIFEST:EMBED`, `/MANIFESTINPUT:set-utf8-code-page.manifest`
 	);
 } else if (maek.OS === "linux") {
@@ -163,7 +166,8 @@ const game_names = [
 	//maek.CPP('ColorTextureProgram.cpp'),  //not used right now, but you might want it
 	maek.CPP('Sound.cpp'),
 	maek.CPP('load_wav.cpp'),
-	maek.CPP('load_opus.cpp')
+	maek.CPP('load_opus.cpp'),
+	maek.CPP('ink/inkcpp/inkcpp_compiler/command.cpp'),
 ];
 
 const common_names = [

@@ -16,6 +16,7 @@
 #include <hb-ft.h>
 
 #include <iostream>
+#include <string>
 
 #define FONT_SIZE 36
 #define MARGGIN (FONT_SIZE * 0.5)
@@ -66,4 +67,7 @@ struct PlayMode : Mode {
 
 	// Create hb-ft font
     hb_font_t *hb_font = nullptr;
+
+	// Story variables
+	int current_line = 0;
 };

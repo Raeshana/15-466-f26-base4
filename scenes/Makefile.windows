@@ -1,13 +1,12 @@
-
-BLENDER="C:\Program Files\Blender Foundation\Blender 4.5.2\blender.exe"
+BLENDER="C:\Program Files\Blender Foundation\Blender 4.1\blender.exe"
 DIST=../dist
 
 all : \
-    $(DIST)/hexapod.pnct \
-    $(DIST)/hexapod.scene \
+    $(DIST)/interrogation.pnct \
+    $(DIST)/interrogation.scene \
 
-$(DIST)/hexapod.scene : hexapod.blend export-scene.py
-    $(BLENDER) --background --python export-scene.py -- "hexapod.blend:Main" "$(DIST)/hexapod.scene"
+$(DIST)/interrogation.scene : interrogation.blend export-scene.py
+	$(BLENDER) --background --python export-scene.py -- "interrogation.blend:Collection" "$(DIST)/interrogation.scene"
 
-$(DIST)/hexapod.pnct : hexapod.blend export-meshes.py
-    $(BLENDER) --background --python export-meshes.py -- "hexapod.blend:Main" "$(DIST)/hexapod.pnct" 
+$(DIST)/interrogation.pnct : interrogation.blend export-meshes.py
+	$(BLENDER) --background --python export-meshes.py -- "interrogation.blend:Collection" "$(DIST)/interrogation.pnct"

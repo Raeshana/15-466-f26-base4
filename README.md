@@ -1,22 +1,31 @@
-# (TODO: your game's title)
+# Hash-Brown Slinging Slasher
 
-Author: (TODO: your name)
+Author: Rae
 
-Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
+Design: A murder mystery about potatoes!
 
-Text Drawing: (TODO: how does the text drawing in this game work? Is text precomputed? Rendered at runtime? What files or utilities are involved?)
+Text Drawing: 
 
-Choices: (TODO: how does the game store choices and narrative? How are they authored? Anything nifty you want to point out?)
+Text is rendered at runtime.
+HarfBuzz was used for text-shaping and FreeType was used to rasterize glyphs.
+The resulting bitmaps were uploaded as textures and drawn to the screen using OpenGL similarly to the PPU466 in project1.
+
+Choices: 
+
+I tried using Inky-- I could not get the workflow with c++ to work.
+Text is stored in an array, along with the respective choices.
+Entering a valid choice jumps to the corresponding index to continue the story.
 
 Screen Shot:
 
-![Screen Shot](screenshot.png)
+![Screen Shot](screenshot_interrogation.png)
 
 How To Play:
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+Space to move text forward.
+Click 1, 2, or 3 when promoted to make a choice.
 
-Sources: (TODO: list a source URL for any assets you did not create yourself. Make sure you have a license for the asset.)
+Sources: :(
 
 This game was built with [NEST](NEST.md).
 
